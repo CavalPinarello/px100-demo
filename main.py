@@ -30,8 +30,12 @@ import numpy as np
 from robot import (
     PX100Arm, GesturePlayer, HardwareLink,
     GESTURES, LIMITS, JOINT_NAMES, L_BASE,
-    PRESETS, PRESET_ORDER,
+    PRESETS, PRESET_ORDER, FLOOR_Z,
 )
+try:
+    from mesh_render import PX100MeshModel
+except ImportError:
+    PX100MeshModel = None
 
 # ═══════════════════════════════════════════════════════════
 #  Constants
@@ -484,6 +488,16 @@ class App:
         self.hw      = HardwareLink()
         self.cam     = Camera()
 
+        # ── 3D Mesh model ────────────────────────────────
+        self.mesh_model = None
+        if PX100MeshModel is not None:
+            try:
+                self.mesh_model = PX100MeshModel(decimate=4)
+                if not self.mesh_model.ready:
+                    self.mesh_model = None
+            except Exception:
+                self.mesh_model = None
+
         # ── Smooth movement ──────────────────────────────
         self.move_target = None     # dict of target angles, or None if idle
         self.move_speed  = 0.30     # 0.05 (very slow) to 1.0 (fast)
@@ -573,6 +587,10 @@ class App:
                                "SAVE POS", C_PURPLE, self._save_position)
         self.btn_clear = Button(bx + save_bw_half + 10, self.save_section_y + 17, save_bw_half, bh,
                                 "CLR ALL", C_STOP, self._clear_positions)
+
+        # ── Safety: collision tracking ─────────────────────
+        self.last_safe_angles = dict(self.robot.angles)
+        self.collision_warning = 0.0   # >0 means flash timer (seconds)
 
         self.running = True
         self.gripper_toggled = False
@@ -824,6 +842,21 @@ class App:
             lo, hi = LIMITS[j]
             self.robot.angles[j] = max(lo, min(hi, self.robot.angles[j]))
 
+        # ── Safety: floor collision check ─────────────────
+        if self.robot.is_safe():
+            self.last_safe_angles = dict(self.robot.angles)
+            if self.collision_warning > 0:
+                self.collision_warning -= dt
+        else:
+            # Revert to last known safe position
+            for j in JOINT_NAMES:
+                self.robot.angles[j] = self.last_safe_angles[j]
+            self.move_target = None
+            self.gesture.stop()
+            for b in self.buttons:
+                b.active = False
+            self.collision_warning = 2.0   # flash warning for 2 seconds
+
         # Objects
         _, lf, rf = self.robot.fk()
         grip_center = (lf + rf) / 2.0
@@ -839,7 +872,10 @@ class App:
 
         # ── 3D viewport ──
         draw_floor(self.screen, self.cam)
-        draw_arm(self.screen, self.cam, self.robot)
+        if self.mesh_model:
+            self.mesh_model.render(self.screen, self.cam, self.robot.angles, pygame)
+        else:
+            draw_arm(self.screen, self.cam, self.robot)
         draw_objects(self.screen, self.cam, self.objects)
 
         # Tip readout
@@ -856,6 +892,15 @@ class App:
             mc = (pulse, pulse, 50)
             mt = self.f_label.render("MOVING...", True, mc)
             self.screen.blit(mt, (VIEW_W//2 - mt.get_width()//2, 45))
+
+        # Collision warning
+        if self.collision_warning > 0:
+            pulse = int(180 + 75 * math.sin(time.time() * 10))
+            warn_c = (pulse, 30, 30)
+            wt = self.f_big.render("COLLISION!", True, warn_c)
+            self.screen.blit(wt, (VIEW_W//2 - wt.get_width()//2, 70))
+            ws = self.f_small.render("Pose would go below table — reverted to safe position", True, C_STOP)
+            self.screen.blit(ws, (VIEW_W//2 - ws.get_width()//2, 102))
 
         # Gesture overlay
         if self.gesture.playing and self.gesture.gesture_name:

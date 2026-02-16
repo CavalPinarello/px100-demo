@@ -12,14 +12,18 @@ L_HAND   = 0.070
 L_FINGER = 0.035
 
 # ── Joint limits (degrees, except gripper 0-1) ─────────────
+# Tightened from URDF maximums for table-top safety
 LIMITS = {
     'waist':    (-180, 180),
-    'shoulder': (-111, 107),
-    'elbow':    (-121,  92),
-    'wrist':    (-100, 123),
+    'shoulder': (-90,  75),    # URDF: -111/107, tightened to avoid table collision
+    'elbow':    (-100, 80),    # URDF: -121/92, tightened for safety
+    'wrist':    (-90,  90),    # URDF: -100/123, tightened for safety
     'gripper':  (0.0, 1.0),
 }
 JOINT_NAMES = ['waist', 'shoulder', 'elbow', 'wrist', 'gripper']
+
+# Minimum Z height (meters) — any FK point below this triggers safety stop
+FLOOR_Z = -0.01
 
 
 class PX100Arm:
@@ -38,9 +42,9 @@ class PX100Arm:
     def fk(self):
         """Return (joint_positions[5], left_finger, right_finger) in 3-D."""
         w  = math.radians(self.angles['waist'])
-        s  = math.radians(self.angles['shoulder'])
-        e  = math.radians(self.angles['elbow'])
-        wr = math.radians(self.angles['wrist'])
+        s  = math.radians(-self.angles['shoulder'])   # negate: servo direction opposite to FK
+        e  = math.radians(-self.angles['elbow'])      # negate: servo direction opposite to FK
+        wr = math.radians(-self.angles['wrist'])      # negate: servo direction opposite to FK
         cw, sw = math.cos(w), math.sin(w)
 
         pts = [np.array([0.0, 0.0, 0.0]),
@@ -71,6 +75,16 @@ class PX100Arm:
             return np.array([fr*cw, fr*sw, fz])
 
         return pts, finger(1), finger(-1)
+
+    def is_safe(self):
+        """Check if current pose keeps all joints above the table surface."""
+        pts, lf, rf = self.fk()
+        for p in pts:
+            if p[2] < FLOOR_Z:
+                return False
+        if lf[2] < FLOOR_Z or rf[2] < FLOOR_Z:
+            return False
+        return True
 
 
 # ═══════════════════════════════════════════════════════════
@@ -521,12 +535,14 @@ class HardwareLink:
     def send(self, angles):
         if not self.connected:
             return
-        for name, mid in self.MOTOR_IDS.items():
-            val = angles[name]
-            if name == 'gripper':
-                # Map 0.0 (closed) → GRIP_CLOSED, 1.0 (open) → GRIP_OPEN
-                pos = int(self.GRIP_CLOSED + val * (self.GRIP_OPEN - self.GRIP_CLOSED))
-            else:
-                pos = int(2048 + val / 0.088)
-            pos = max(0, min(4095, pos))
-            self._pkt.write4ByteTxRx(self._port, mid, self.ADDR_GOAL, pos)
+        try:
+            for name, mid in self.MOTOR_IDS.items():
+                val = angles[name]
+                if name == 'gripper':
+                    pos = int(self.GRIP_CLOSED + val * (self.GRIP_OPEN - self.GRIP_CLOSED))
+                else:
+                    pos = int(2048 + val / 0.088)
+                pos = max(0, min(4095, pos))
+                self._pkt.write4ByteTxRx(self._port, mid, self.ADDR_GOAL, pos)
+        except Exception:
+            self.connected = False
