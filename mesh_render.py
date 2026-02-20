@@ -51,11 +51,21 @@ def _load_stl(name, decimate=1):
 
 
 class PX100MeshModel:
-    """Loads PX100 STL meshes and renders them with flat shading."""
+    """Loads PX100 STL meshes and renders them with Phong shading + rim lighting."""
 
-    # Robot body colors — brighter for better visibility
+    # Per-link colors for visual differentiation
+    LINK_COLORS = {
+        'base':        np.array([105, 110, 130], dtype=np.float32),
+        'shoulder':    np.array([82, 88, 112], dtype=np.float32),
+        'upper_arm':   np.array([80, 125, 200], dtype=np.float32),
+        'forearm':     np.array([60, 170, 180], dtype=np.float32),
+        'gripper':     np.array([82, 88, 112], dtype=np.float32),
+        'gripper_bar': np.array([95, 105, 128], dtype=np.float32),
+        'finger':      np.array([82, 88, 112], dtype=np.float32),
+    }
+
+    # Fallback
     BASE_COLOR = np.array([110, 115, 130], dtype=np.float32)
-    # Slightly different color for servos/joints
     SERVO_COLOR = np.array([85, 90, 110], dtype=np.float32)
 
     def __init__(self, decimate=4):
@@ -112,7 +122,8 @@ class PX100MeshModel:
         # Base: at world origin
         R0 = np.eye(3, dtype=np.float32)
         p0 = np.zeros(3, dtype=np.float32)
-        self._add('base', R0, p0, tris, cam, view, light, self.BASE_COLOR)
+        lc = self.LINK_COLORS
+        self._add('base', R0, p0, tris, cam, view, light, lc['base'])
 
         # Waist joint: Rz(waist) at (0, 0, 0.05085)
         p_waist = np.array([0, 0, 0.05085], dtype=np.float32)
@@ -120,35 +131,35 @@ class PX100MeshModel:
 
         # Shoulder link mesh at (0, 0, -0.0022) in waist frame
         p_sh_mesh = p_waist + R_waist @ np.array([0, 0, -0.0022], dtype=np.float32)
-        self._add('shoulder', R_waist, p_sh_mesh, tris, cam, view, light, self.SERVO_COLOR)
+        self._add('shoulder', R_waist, p_sh_mesh, tris, cam, view, light, lc['shoulder'])
 
         # Shoulder joint: Ry(shoulder) at (0, 0, 0.04225) from waist
         p_sh = p_waist + R_waist @ np.array([0, 0, 0.04225], dtype=np.float32)
         R_sh = R_waist @ _ry(sh)
 
         # Upper arm mesh
-        self._add('upper_arm', R_sh, p_sh, tris, cam, view, light, self.BASE_COLOR)
+        self._add('upper_arm', R_sh, p_sh, tris, cam, view, light, lc['upper_arm'])
 
         # Elbow joint: Ry(elbow) at (0.035, 0, 0.1) from shoulder
         p_el = p_sh + R_sh @ np.array([0.035, 0, 0.1], dtype=np.float32)
         R_el = R_sh @ _ry(el)
 
         # Forearm mesh
-        self._add('forearm', R_el, p_el, tris, cam, view, light, self.BASE_COLOR)
+        self._add('forearm', R_el, p_el, tris, cam, view, light, lc['forearm'])
 
         # Wrist joint: Ry(wrist) at (0.1, 0, 0) from elbow
         p_wr = p_el + R_el @ np.array([0.1, 0, 0], dtype=np.float32)
         R_wr = R_el @ _ry(wr)
 
         # Gripper body mesh
-        self._add('gripper', R_wr, p_wr, tris, cam, view, light, self.SERVO_COLOR)
+        self._add('gripper', R_wr, p_wr, tris, cam, view, light, lc['gripper'])
 
         # EE arm at (0.063, 0, 0) from wrist
         p_ee = p_wr + R_wr @ np.array([0.063, 0, 0], dtype=np.float32)
 
         # Gripper bar mesh: offset (-0.063, 0, 0) from ee
         p_bar = p_ee + R_wr @ np.array([-0.063, 0, 0], dtype=np.float32)
-        self._add('gripper_bar', R_wr, p_bar, tris, cam, view, light, self.BASE_COLOR)
+        self._add('gripper_bar', R_wr, p_bar, tris, cam, view, light, lc['gripper_bar'])
 
         # Fingers: at (0.023, 0, 0) from gripper_bar
         p_fingers = p_ee + R_wr @ np.array([0.023, 0, 0], dtype=np.float32)
@@ -157,12 +168,12 @@ class PX100MeshModel:
         # Left finger: rpy(π, π, 0), prismatic +Y
         p_lf = p_fingers + R_wr @ np.array([0, finger_y + 0.005, 0], dtype=np.float32)
         R_lf = R_wr @ _ry(math.pi) @ _rx(math.pi)
-        self._add('finger', R_lf, p_lf, tris, cam, view, light, self.SERVO_COLOR)
+        self._add('finger', R_lf, p_lf, tris, cam, view, light, lc['finger'])
 
         # Right finger: rpy(0, π, 0), prismatic -Y
         p_rf = p_fingers + R_wr @ np.array([0, -finger_y - 0.005, 0], dtype=np.float32)
         R_rf = R_wr @ _ry(math.pi)
-        self._add('finger', R_rf, p_rf, tris, cam, view, light, self.SERVO_COLOR)
+        self._add('finger', R_rf, p_rf, tris, cam, view, light, lc['finger'])
 
         # ── Sort by depth (painter's algorithm) and draw ──
         tris.sort(key=lambda t: -t[1])
@@ -191,9 +202,20 @@ class PX100MeshModel:
         vis_v = world_v[visible]
         vis_n = world_n[visible]
 
-        # Flat shading
-        light_val = np.abs(vis_n @ light)
-        brightness = np.clip(0.3 + 0.7 * light_val, 0.2, 1.0)
+        # Phong shading: ambient + diffuse + specular + rim
+        diffuse = np.clip(vis_n @ light, 0, 1)
+
+        # Specular (Blinn-Phong: half-vector)
+        half_v = light + view
+        half_v /= np.linalg.norm(half_v)
+        spec_dot = np.clip(vis_n @ half_v, 0, 1)
+        specular = np.power(spec_dot, 28) * 0.35
+
+        # Rim lighting (fresnel-like glow on edges facing away from camera)
+        view_dot = np.abs(vis_n @ view)
+        rim = np.power(np.clip(1.0 - view_dot, 0, 1), 2.5) * 0.25
+
+        brightness = np.clip(0.22 + 0.58 * diffuse + specular + rim, 0.18, 1.35)
 
         # Project all vertices using vectorized camera projection
         flat_pts = vis_v.reshape(-1, 3)

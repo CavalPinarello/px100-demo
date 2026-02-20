@@ -17,7 +17,8 @@ Controls
   Left / Right          : wrist rotate
   Space                 : toggle gripper
   H                     : home position
-  1-5                   : trigger gestures
+  R                     : toggle auto-rotate camera
+  1-9                   : trigger gestures
   Esc                   : quit
 """
 
@@ -31,6 +32,7 @@ from robot import (
     PX100Arm, GesturePlayer, HardwareLink,
     GESTURES, LIMITS, JOINT_NAMES, L_BASE,
     PRESETS, PRESET_ORDER, FLOOR_Z,
+    COMPOUND_ORDER,
 )
 try:
     from mesh_render import PX100MeshModel
@@ -40,7 +42,7 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════
 #  Constants
 # ═══════════════════════════════════════════════════════════
-WIN_W, WIN_H = 1280, 1020
+WIN_W, WIN_H = 1280, 1080
 VIEW_W  = 880
 PANEL_X = VIEW_W
 PANEL_W = WIN_W - VIEW_W
@@ -62,6 +64,7 @@ C_GREEN    = (60, 200, 90)
 C_ORANGE   = (240, 160, 40)
 C_YELLOW   = (255, 210, 50)
 C_PURPLE   = (160, 100, 220)
+C_TEAL     = (60, 190, 170)
 
 # Arm segment colors
 C_BASE_LINK = (110, 110, 130)
@@ -72,6 +75,7 @@ C_GRIP_C    = (255, 200, 60)
 C_JOINT_DOT = (230, 230, 245)
 
 GESTURE_ORDER = ['happy', 'surprise', 'chirpy', 'funny', 'waving', 'bite', 'curious', 'sad', 'excited']
+COMPOUND_GESTURE_ORDER = COMPOUND_ORDER
 
 
 # ═══════════════════════════════════════════════════════════
@@ -425,35 +429,91 @@ def draw_floor(surf, cam):
 
 
 def draw_arm(surf, cam, robot):
+    """Draw robot arm with depth-based shading, highlights, and glow joints."""
     pts, lf, rf = robot.fk()
     colors = [C_BASE_LINK, C_UPPER, C_FORE, C_HAND]
-    widths = [8, 7, 6, 5]
+    widths = [10, 9, 7, 6]
 
-    # shadow
-    shadow_c = (28, 28, 42)
+    # Floor shadow — soft offset
+    shadow_c = (25, 25, 38)
     sp = [cam.project((p[0], p[1], 0))[0] for p in pts]
     for i in range(len(sp)-1):
-        pygame.draw.line(surf, shadow_c, sp[i], sp[i+1], 3)
+        pygame.draw.line(surf, shadow_c, sp[i], sp[i+1], widths[i] - 1)
 
-    # segments
+    # Project all points
     proj = [cam.project(p) for p in pts]
+
+    # Segments with depth shading + highlight/shadow edges
     for i in range(len(pts)-1):
-        pygame.draw.line(surf, colors[i], proj[i][0], proj[i+1][0], widths[i])
+        p1, d1 = proj[i]
+        p2, d2 = proj[i+1]
+        avg_d = (d1 + d2) / 2
+        bright = max(0.6, min(1.15, 1.3 / max(0.5, avg_d)))
 
-    # joints
-    for i, (s, _) in enumerate(proj):
-        r = 8 if i < 2 else 7
+        base = colors[i]
+        w = widths[i]
+
+        # Perpendicular in screen space (for edge shading)
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        seg_len = math.hypot(dx, dy)
+        if seg_len < 1:
+            continue
+        nx = -dy / seg_len
+        ny = dx / seg_len
+        off = max(1, w // 4)
+
+        # Shadow edge (shifted toward bottom-right)
+        dark_c = tuple(max(0, int(c * 0.35 * bright)) for c in base)
+        s1 = (p1[0] + int(nx * off) + 1, p1[1] + int(ny * off) + 1)
+        s2 = (p2[0] + int(nx * off) + 1, p2[1] + int(ny * off) + 1)
+        pygame.draw.line(surf, dark_c, s1, s2, w)
+
+        # Main segment body
+        main_c = tuple(int(min(255, c * 0.85 * bright)) for c in base)
+        pygame.draw.line(surf, main_c, p1, p2, w)
+
+        # Highlight edge (shifted toward top-left)
+        hi_c = tuple(int(min(255, c * 1.3 * bright)) for c in base)
+        h1 = (p1[0] - int(nx * off), p1[1] - int(ny * off))
+        h2 = (p2[0] - int(nx * off), p2[1] - int(ny * off))
+        pygame.draw.line(surf, hi_c, h1, h2, max(1, w // 3))
+
+    # Joints with glow effect
+    for i, (s, d) in enumerate(proj):
+        r = 9 if i < 2 else 8
+        bright = max(0.6, min(1.15, 1.3 / max(0.5, d)))
+        c = colors[min(i, len(colors)-1)]
+
+        # Soft glow ring
+        glow_r = r + 6
+        glow_c = tuple(int(min(255, v * 0.5 * bright)) for v in c)
+        glow_surf = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*glow_c, 45), (glow_r, glow_r), glow_r)
+        surf.blit(glow_surf, (s[0]-glow_r, s[1]-glow_r))
+
+        # Outer ring
         pygame.draw.circle(surf, C_JOINT_DOT, s, r)
-        pygame.draw.circle(surf, colors[min(i, len(colors)-1)], s, r-2)
+        # Inner colored fill
+        inner_c = tuple(int(min(255, v * bright)) for v in c)
+        pygame.draw.circle(surf, inner_c, s, r - 2)
+        # Specular highlight dot
+        hi_pos = (s[0] - 2, s[1] - 2)
+        pygame.draw.circle(surf, (255, 255, 255), hi_pos, max(1, r // 3))
 
-    # gripper
+    # Gripper with highlights
     wp = proj[-1][0]
     lp, _ = cam.project(lf)
     rp, _ = cam.project(rf)
-    pygame.draw.line(surf, C_GRIP_C, wp, lp, 5)
-    pygame.draw.line(surf, C_GRIP_C, wp, rp, 5)
-    pygame.draw.circle(surf, C_GRIP_C, lp, 5)
-    pygame.draw.circle(surf, C_GRIP_C, rp, 5)
+    pygame.draw.line(surf, C_GRIP_C, wp, lp, 6)
+    pygame.draw.line(surf, C_GRIP_C, wp, rp, 6)
+    hi_grip = tuple(min(255, c + 60) for c in C_GRIP_C)
+    pygame.draw.line(surf, hi_grip, wp, lp, 2)
+    pygame.draw.line(surf, hi_grip, wp, rp, 2)
+    pygame.draw.circle(surf, C_GRIP_C, lp, 6)
+    pygame.draw.circle(surf, C_GRIP_C, rp, 6)
+    pygame.draw.circle(surf, hi_grip, lp, 3)
+    pygame.draw.circle(surf, hi_grip, rp, 3)
 
     return pts
 
@@ -465,6 +525,14 @@ def draw_objects(surf, cam, objects):
         c = obj.color if not obj.held else tuple(min(255, v+70) for v in obj.color)
         pygame.draw.circle(surf, c, sp, sz)
         pygame.draw.circle(surf, (255,255,255), sp, sz, 1)
+
+
+# ═══════════════════════════════════════════════════════════
+#  Layout helper
+# ═══════════════════════════════════════════════════════════
+def _grid_rows(n):
+    """Number of rows for n items in a 2-column grid."""
+    return (n + 1) // 2
 
 
 # ═══════════════════════════════════════════════════════════
@@ -487,6 +555,9 @@ class App:
         self.gesture = GesturePlayer(self.robot)
         self.hw      = HardwareLink()
         self.cam     = Camera()
+
+        # ── Auto-rotate camera ────────────────────────────
+        self.auto_rotate = False
 
         # ── 3D Mesh model ────────────────────────────────
         self.mesh_model = None
@@ -527,66 +598,96 @@ class App:
         self.grip_slider = GripSlider(VIEW_W // 2 - 60, ctrl_y - 55, 110)
         self.rot_knob    = RotKnob(VIEW_W // 2 + 60, ctrl_y, 42)
 
-        # ── Panel layout ─────────────────────────────────
+        # ── Panel layout (dynamic Y positions) ─────────────
         bx = PANEL_X + 12
         bw = (PANEL_W - 34) // 2
-        bh = 36
-        by0 = 72
+        bh = 32
+        row_h = bh + 5  # 37px per row
+        sec_gap = 14     # gap between sections
 
-        # Gesture buttons
+        # --- Gesture buttons ---
+        gest_label_y = 52
+        by0 = gest_label_y + 15
+
         self.buttons = []
         for i, gname in enumerate(GESTURE_ORDER):
             g = GESTURES[gname]
             x = bx + (i % 2) * (bw + 10)
-            y = by0 + (i // 2) * (bh + 6)
+            y = by0 + (i // 2) * row_h
             self.buttons.append(Button(x, y, bw, bh, g['label'], g['color'],
                                        lambda n=gname: self._play(n)))
-        stop_row = (len(GESTURE_ORDER)) // 2
+        stop_row = len(GESTURE_ORDER) // 2
         stop_col = len(GESTURE_ORDER) % 2
         sx = bx + stop_col * (bw + 10)
-        sy = by0 + stop_row * (bh + 6)
+        sy = by0 + stop_row * row_h
         self.btn_stop = Button(sx, sy, bw, bh, "STOP", C_STOP, self._stop)
         self.buttons.append(self.btn_stop)
+        gesture_bottom = sy + bh
 
-        # Preset position buttons
-        preset_y0 = sy + bh + 22
+        # --- Compound movement buttons ---
+        self.compound_label_y = gesture_bottom + sec_gap
+        compound_by0 = self.compound_label_y + 15
+        self.compound_buttons = []
+        for i, cname in enumerate(COMPOUND_GESTURE_ORDER):
+            g = GESTURES[cname]
+            x = bx + (i % 2) * (bw + 10)
+            y = compound_by0 + (i // 2) * row_h
+            self.compound_buttons.append(Button(x, y, bw, bh, g['label'], g['color'],
+                                                lambda n=cname: self._play(n)))
+        n_compound_rows = _grid_rows(len(COMPOUND_GESTURE_ORDER))
+        compound_bottom = compound_by0 + n_compound_rows * row_h
+
+        # --- Preset position buttons ---
+        self.preset_label_y = compound_bottom + sec_gap - 4
+        preset_by0 = self.preset_label_y + 15
         self.preset_buttons = []
         for i, pname in enumerate(PRESET_ORDER):
             p = PRESETS[pname]
             x = bx + (i % 2) * (bw + 10)
-            y = preset_y0 + (i // 2) * (bh + 6)
+            y = preset_by0 + (i // 2) * row_h
             self.preset_buttons.append(Button(x, y, bw, bh, p['label'], p['color'],
                                               lambda n=pname: self._preset(n)))
+        n_preset_rows = _grid_rows(len(PRESET_ORDER))
+        preset_bottom = preset_by0 + n_preset_rows * row_h
 
-        # Gripper open/close buttons
-        grip_y = preset_y0 + 2 * (bh + 6) + 18
-        self.btn_grip_open = Button(bx, grip_y, bw, bh, "OPEN GRIP", C_GREEN,
+        # --- Gripper open/close buttons ---
+        self.grip_label_y = preset_bottom + sec_gap - 4
+        grip_by0 = self.grip_label_y + 15
+        self.btn_grip_open = Button(bx, grip_by0, bw, bh, "OPEN GRIP", C_GREEN,
                                     lambda: self._set_gripper(1.0))
-        self.btn_grip_close = Button(bx + bw + 10, grip_y, bw, bh, "CLOSE GRIP", C_ORANGE,
+        self.btn_grip_close = Button(bx + bw + 10, grip_by0, bw, bh, "CLOSE GRIP", C_ORANGE,
                                      lambda: self._set_gripper(0.0))
+        grip_bottom = grip_by0 + bh
 
         # ── Speed slider ─────────────────────────────────
-        self.speed_y = grip_y + bh + 22
+        self.speed_y = grip_bottom + sec_gap
         self.speed_track = pygame.Rect(bx, self.speed_y + 18, PANEL_W - 26, 6)
         self._speed_drag = False
+        speed_bottom = self.speed_y + 30
 
         # ── Joint sliders ────────────────────────────────
-        slider_y0 = self.speed_y + 48
+        self.joint_label_y = speed_bottom + sec_gap - 4
+        slider_y0 = self.joint_label_y + 15
+        slider_h = 38
         labels = ['Waist', 'Shoulder', 'Elbow', 'Wrist Rotate', 'Gripper']
         self.sliders = []
         for i, jname in enumerate(JOINT_NAMES):
             self.sliders.append(Slider(
-                bx, slider_y0 + i * 44, PANEL_W - 26,
+                bx, slider_y0 + i * slider_h, PANEL_W - 26,
                 labels[i], jname, LIMITS[jname]))
+        slider_bottom = slider_y0 + 5 * slider_h
 
         # ── Save / Load position buttons ─────────────────
-        self.save_section_y = slider_y0 + 5 * 44 + 12
-        save_bw_full = PANEL_W - 26
+        self.save_section_y = slider_bottom + 6
         save_bw_half = (PANEL_W - 34) // 2
-        self.btn_save = Button(bx, self.save_section_y + 17, save_bw_half, bh,
+        self.btn_save = Button(bx, self.save_section_y + 15, save_bw_half, bh,
                                "SAVE POS", C_PURPLE, self._save_position)
-        self.btn_clear = Button(bx + save_bw_half + 10, self.save_section_y + 17, save_bw_half, bh,
+        self.btn_clear = Button(bx + save_bw_half + 10, self.save_section_y + 15, save_bw_half, bh,
                                 "CLR ALL", C_STOP, self._clear_positions)
+
+        # Store layout constants for _draw
+        self._bh = bh
+        self._row_h = row_h
 
         # ── Safety: collision tracking ─────────────────────
         self.last_safe_angles = dict(self.robot.angles)
@@ -632,11 +733,14 @@ class App:
         self.gesture.play(name)
         for b in self.buttons:
             b.active = (b.label == GESTURES.get(name, {}).get('label'))
+        for b in self.compound_buttons:
+            b.active = (b.label == GESTURES.get(name, {}).get('label'))
 
     def _stop(self):
         self.gesture.stop()
         self.move_target = None
         for b in self.buttons: b.active = False
+        for b in self.compound_buttons: b.active = False
 
     def _home(self):
         self._preset('forward')
@@ -644,12 +748,14 @@ class App:
     def _preset(self, name):
         self.gesture.stop()
         for b in self.buttons: b.active = False
+        for b in self.compound_buttons: b.active = False
         if name in PRESETS:
             self.move_target = dict(PRESETS[name]['angles'])
 
     def _set_gripper(self, val):
         self.gesture.stop()
         for b in self.buttons: b.active = False
+        for b in self.compound_buttons: b.active = False
         if self.move_target is None:
             self.move_target = dict(self.robot.angles)
         self.move_target['gripper'] = val
@@ -682,6 +788,7 @@ class App:
                 elif ev.key == pygame.K_8: self._play('sad')
                 elif ev.key == pygame.K_9: self._play('excited')
                 elif ev.key == pygame.K_h: self._home()
+                elif ev.key == pygame.K_r: self.auto_rotate = not self.auto_rotate
                 elif ev.key == pygame.K_SPACE:
                     if not self.gripper_toggled:
                         g = self.robot.angles['gripper']
@@ -697,6 +804,8 @@ class App:
             consumed = self.grip_slider.event(ev, self.robot, self.gesture) or consumed
             consumed = self.rot_knob.event(ev, self.robot, self.gesture) or consumed
             for b in self.buttons:
+                consumed = b.event(ev) or consumed
+            for b in self.compound_buttons:
                 consumed = b.event(ev) or consumed
             for b in self.preset_buttons:
                 consumed = b.event(ev) or consumed
@@ -747,7 +856,7 @@ class App:
         """Return index of saved position button at pos, or None."""
         bx = PANEL_X + 12
         bw3 = (PANEL_W - 40) // 3
-        btn_y0 = self.save_section_y + 17 + 36 + 8
+        btn_y0 = self.save_section_y + 15 + self._bh + 8
         for i in range(len(self.saved_positions)):
             col = i % 3
             row = i // 3
@@ -759,12 +868,17 @@ class App:
         return None
 
     def _update(self, dt):
+        # Auto-rotate camera
+        if self.auto_rotate:
+            self.cam.az += 25 * dt
+
         # Gesture animation
         if self.gesture.playing:
             self.gesture.update()
             self.move_target = None  # gesture overrides smooth move
             if not self.gesture.playing:
                 for b in self.buttons: b.active = False
+                for b in self.compound_buttons: b.active = False
         else:
             # On-screen joystick input — cancels smooth move
             js = 110 * dt
@@ -805,6 +919,7 @@ class App:
                     self.gesture.stop()
                     self.move_target = None
                     for b in self.buttons: b.active = False
+                    for b in self.compound_buttons: b.active = False
                 self.robot.angles['waist']    += lx * jsp
                 self.robot.angles['shoulder'] -= ly * jsp
                 self.robot.angles['elbow']    -= ry * jsp
@@ -855,6 +970,8 @@ class App:
             self.gesture.stop()
             for b in self.buttons:
                 b.active = False
+            for b in self.compound_buttons:
+                b.active = False
             self.collision_warning = 2.0   # flash warning for 2 seconds
 
         # Objects
@@ -886,6 +1003,13 @@ class App:
             True, C_DIM)
         self.screen.blit(ts, (10, 10))
 
+        # Auto-rotate indicator
+        if self.auto_rotate:
+            pulse = int(180 + 55 * math.sin(time.time() * 3))
+            ar_c = (pulse, pulse, 255)
+            ar_t = self.f_label.render("AUTO-ROTATE [R]", True, ar_c)
+            self.screen.blit(ar_t, (10, 28))
+
         # Moving indicator
         if self.move_target is not None:
             pulse = int(180 + 75 * math.sin(time.time() * 6))
@@ -899,7 +1023,7 @@ class App:
             warn_c = (pulse, 30, 30)
             wt = self.f_big.render("COLLISION!", True, warn_c)
             self.screen.blit(wt, (VIEW_W//2 - wt.get_width()//2, 70))
-            ws = self.f_small.render("Pose would go below table — reverted to safe position", True, C_STOP)
+            ws = self.f_small.render("Pose would go below table \u2014 reverted to safe position", True, C_STOP)
             self.screen.blit(ws, (VIEW_W//2 - ws.get_width()//2, 102))
 
         # Gesture overlay
@@ -927,20 +1051,25 @@ class App:
         self.screen.blit(tt, (PANEL_X + (PANEL_W - tt.get_width())//2, 18))
 
         # Gestures
-        st = self.f_small.render("GESTURES", True, C_DIM)
-        self.screen.blit(st, (PANEL_X + 12, 55))
+        self.screen.blit(self.f_small.render("GESTURES", True, C_DIM), (PANEL_X + 12, 52))
         for b in self.buttons:
             b.draw(self.screen, self.f_label)
 
+        # Compound
+        self.screen.blit(self.f_small.render("COMPOUND", True, C_TEAL),
+                         (PANEL_X + 12, self.compound_label_y))
+        for b in self.compound_buttons:
+            b.draw(self.screen, self.f_label)
+
         # Presets
-        py = self.preset_buttons[0].rect.y - 17
-        self.screen.blit(self.f_small.render("POSITIONS", True, C_DIM), (PANEL_X+12, py))
+        self.screen.blit(self.f_small.render("POSITIONS", True, C_DIM),
+                         (PANEL_X + 12, self.preset_label_y))
         for b in self.preset_buttons:
             b.draw(self.screen, self.f_label)
 
         # Gripper
-        gy = self.btn_grip_open.rect.y - 17
-        self.screen.blit(self.f_small.render("GRIPPER", True, C_DIM), (PANEL_X+12, gy))
+        self.screen.blit(self.f_small.render("GRIPPER", True, C_DIM),
+                         (PANEL_X + 12, self.grip_label_y))
         self.btn_grip_open.draw(self.screen, self.f_label)
         self.btn_grip_close.draw(self.screen, self.f_label)
 
@@ -961,8 +1090,8 @@ class App:
         pygame.draw.circle(self.screen, C_YELLOW, (thumb_x, thumb_y), 6)
 
         # Joint sliders
-        sy = self.sliders[0].y - 22
-        self.screen.blit(self.f_small.render("JOINT CONTROL", True, C_DIM), (PANEL_X+12, sy))
+        self.screen.blit(self.f_small.render("JOINT CONTROL", True, C_DIM),
+                         (PANEL_X + 12, self.joint_label_y))
         for s in self.sliders:
             s.draw(self.screen, self.robot, self.f_small, self.f_label)
 
@@ -975,7 +1104,7 @@ class App:
         # Draw saved position buttons (grid of 3 per row)
         bx = PANEL_X + 12
         bw3 = (PANEL_W - 40) // 3
-        btn_y0 = self.save_section_y + 17 + 36 + 8
+        btn_y0 = self.save_section_y + 15 + self._bh + 8
         mx, my = pygame.mouse.get_pos()
         for i, sp in enumerate(self.saved_positions):
             col = i % 3
@@ -994,34 +1123,39 @@ class App:
 
         # ── Keyboard shortcuts (compact) ──
         max_save_rows = max(1, (len(self.saved_positions) + 2) // 3)
-        ky = btn_y0 + max_save_rows * 34 + 10
+        ky = btn_y0 + max_save_rows * 34 + 8
         pygame.draw.line(self.screen, C_DIVIDER, (PANEL_X+12, ky), (PANEL_X+PANEL_W-12, ky))
-        ky += 6
+        ky += 4
         self.screen.blit(self.f_small.render("KEYBOARD", True, C_DIM), (PANEL_X+12, ky))
-        ky += 16
+        ky += 14
         for key, desc in [("A/D","Waist"),("W/S","Shoulder"),
                           ("\u2191/\u2193","Elbow"),("\u2190/\u2192","Wrist"),
-                          ("Space","Gripper"),("H","Home"),("1-9","Gestures")]:
+                          ("Space","Gripper"),("H","Home"),("R","Auto-Rotate"),
+                          ("1-9","Gestures")]:
             ks = self.f_small.render(key, True, C_ACCENT)
             ds = self.f_small.render(desc, True, C_DIM)
             self.screen.blit(ks, (PANEL_X+18, ky))
             self.screen.blit(ds, (PANEL_X+80, ky))
-            ky += 15
+            ky += 14
 
         # Status
-        ky += 4
+        ky += 2
         pygame.draw.line(self.screen, C_DIVIDER, (PANEL_X+12, ky), (PANEL_X+PANEL_W-12, ky))
-        ky += 6
+        ky += 4
         self.screen.blit(self.f_small.render("STATUS", True, C_DIM), (PANEL_X+12, ky))
-        ky += 16
+        ky += 14
         mode = "Hardware" if self.hw.connected else "Simulation"
         mc = C_GREEN if self.hw.connected else C_DIM
         self.screen.blit(self.f_small.render(f"Mode: {mode}", True, mc), (PANEL_X+18, ky))
-        ky += 15
+        ky += 14
         self.screen.blit(self.f_small.render(f"Joystick: {self.joy_name}", True, C_TEXT), (PANEL_X+18, ky))
-        ky += 15
+        ky += 14
         gn = self.gesture.gesture_name or "\u2014"
         self.screen.blit(self.f_small.render(f"Gesture: {gn}", True, C_TEXT), (PANEL_X+18, ky))
+        ky += 14
+        rot_s = "ON" if self.auto_rotate else "OFF"
+        rot_c = C_TEAL if self.auto_rotate else C_DIM
+        self.screen.blit(self.f_small.render(f"Rotate: {rot_s}", True, rot_c), (PANEL_X+18, ky))
 
         pygame.display.flip()
 
@@ -1038,7 +1172,7 @@ if __name__ == '__main__':
     else:
         print("  No U2D2 detected \u2014 running in simulation mode")
     print("  Use on-screen joysticks, gripper slider, and rotation knob")
-    print("  Press ESC to quit")
+    print("  Press R to toggle auto-rotate, ESC to quit")
     print()
 
     app = App()

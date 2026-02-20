@@ -399,7 +399,125 @@ GESTURES = {
             ({'waist': 0,   'shoulder':  0, 'elbow':  0, 'wrist':  0,  'gripper':.5},   .40),
         ],
     },
+
+    # ═════════════════════════════════════════════════════════
+    #  COMPOUND MOVEMENTS — Multi-joint coordinated sequences
+    # ═════════════════════════════════════════════════════════
+
+    # ── SCAN ──────────────────────────────────────────────
+    # Surveillance sweep — slow deliberate rotation scanning the room
+    'scan': {
+        'label': 'Scan', 'color': (100, 200, 180),
+        'frames': [
+            # Rise to scanning height
+            ({'waist': 0,   'shoulder': 40, 'elbow':-45, 'wrist':-10, 'gripper':.3},  .50),
+            # Sweep left — deliberate
+            ({'waist':-70,  'shoulder': 42, 'elbow':-43, 'wrist':-15, 'gripper':.3},  .80),
+            # Pause — linger
+            ({'waist':-70,  'shoulder': 44, 'elbow':-40, 'wrist':-12, 'gripper':.4},  .30),
+            # Sweep right — slow and steady
+            ({'waist': 70,  'shoulder': 38, 'elbow':-47, 'wrist': -8, 'gripper':.3}, 1.40),
+            # Pause
+            ({'waist': 70,  'shoulder': 40, 'elbow':-44, 'wrist': -6, 'gripper':.4},  .30),
+            # Return center
+            ({'waist': 0,   'shoulder': 40, 'elbow':-45, 'wrist':-10, 'gripper':.3},  .70),
+            # Settle
+            ({'waist': 0,   'shoulder':  0, 'elbow':  0, 'wrist':  0, 'gripper':.5},  .60),
+        ],
+    },
+
+    # ── NOD ──────────────────────────────────────────────
+    # Agreement — coordinated shoulder+elbow bobbing like a nod
+    'nod': {
+        'label': 'Nod', 'color': (180, 150, 220),
+        'frames': [
+            # Attentive posture
+            ({'waist': 0, 'shoulder': 35, 'elbow':-40, 'wrist':-15, 'gripper':.4},  .35),
+            # Nod down 1
+            ({'waist': 0, 'shoulder': 55, 'elbow':-20, 'wrist':-30, 'gripper':.3},  .22),
+            # Nod up 1
+            ({'waist': 0, 'shoulder': 30, 'elbow':-45, 'wrist':-10, 'gripper':.4},  .22),
+            # Nod down 2 — deeper
+            ({'waist': 0, 'shoulder': 60, 'elbow':-15, 'wrist':-35, 'gripper':.3},  .22),
+            # Nod up 2
+            ({'waist': 0, 'shoulder': 28, 'elbow':-48, 'wrist': -8, 'gripper':.4},  .22),
+            # Nod down 3 — emphatic
+            ({'waist': 0, 'shoulder': 58, 'elbow':-18, 'wrist':-32, 'gripper':.3},  .25),
+            # Settle — satisfied
+            ({'waist': 0, 'shoulder': 15, 'elbow':-20, 'wrist': -5, 'gripper':.5},  .40),
+            ({'waist': 0, 'shoulder':  0, 'elbow':  0, 'wrist':  0, 'gripper':.5},  .40),
+        ],
+    },
+
+    # ── BOW ──────────────────────────────────────────────
+    # Polite greeting — graceful fold forward and dignified return
+    'bow': {
+        'label': 'Bow', 'color': (220, 180, 100),
+        'frames': [
+            # Stand tall — prepare
+            ({'waist': 0, 'shoulder':-20, 'elbow':-50, 'wrist':  0, 'gripper': 0},  .40),
+            # Begin fold — slow and controlled
+            ({'waist': 0, 'shoulder': 30, 'elbow':-30, 'wrist':-20, 'gripper': 0},  .45),
+            # Deep bow
+            ({'waist': 0, 'shoulder': 65, 'elbow':-10, 'wrist':-50, 'gripper': 0},  .50),
+            # Hold bow — respectful pause
+            ({'waist': 0, 'shoulder': 65, 'elbow':-10, 'wrist':-50, 'gripper': 0},  .60),
+            # Rise gracefully
+            ({'waist': 0, 'shoulder': 30, 'elbow':-35, 'wrist':-15, 'gripper':.3},  .50),
+            ({'waist': 0, 'shoulder':  0, 'elbow':  0, 'wrist':  0, 'gripper':.5},  .50),
+        ],
+    },
+
+    # ── SEARCH ───────────────────────────────────────────
+    # Looking for something — waist rotation + height variation
+    'search': {
+        'label': 'Search', 'color': (130, 210, 130),
+        'frames': [
+            # Alert — head up
+            ({'waist': 0,   'shoulder': 45, 'elbow':-50, 'wrist': 15, 'gripper':.5},  .30),
+            # Look high left
+            ({'waist':-45,  'shoulder': 60, 'elbow':-60, 'wrist': 25, 'gripper':.4},  .50),
+            # Look low left
+            ({'waist':-50,  'shoulder': 20, 'elbow':-20, 'wrist':-15, 'gripper':.6},  .40),
+            # Look high right
+            ({'waist': 45,  'shoulder': 55, 'elbow':-55, 'wrist': 20, 'gripper':.4},  .60),
+            # Look low right
+            ({'waist': 50,  'shoulder': 15, 'elbow':-15, 'wrist':-20, 'gripper':.6},  .40),
+            # Check center
+            ({'waist': 0,   'shoulder': 50, 'elbow':-45, 'wrist': 10, 'gripper':.5},  .40),
+            # Found it! Lean forward
+            ({'waist': 10,  'shoulder': 70, 'elbow':-15, 'wrist':-25, 'gripper':.8},  .45),
+            # Settle
+            ({'waist': 0,   'shoulder': 25, 'elbow':-25, 'wrist':  5, 'gripper':.5},  .40),
+            ({'waist': 0,   'shoulder':  0, 'elbow':  0, 'wrist':  0, 'gripper':.5},  .45),
+        ],
+    },
+
+    # ── STRETCH ──────────────────────────────────────────
+    # Wake up — reach tall, sweep wide, settle with satisfaction
+    'stretch': {
+        'label': 'Stretch', 'color': (200, 130, 170),
+        'frames': [
+            # Start low — sleepy
+            ({'waist': 0,  'shoulder':-10, 'elbow':-70, 'wrist': 40, 'gripper': 0},  .40),
+            # Reach up — big yawn
+            ({'waist': 0,  'shoulder':-25, 'elbow':-55, 'wrist':  0, 'gripper': 1},  .60),
+            # Full extension — tall!
+            ({'waist': 0,  'shoulder':-30, 'elbow':-80, 'wrist': 10, 'gripper': 1},  .50),
+            # Sweep right — stretching
+            ({'waist': 50, 'shoulder':-25, 'elbow':-60, 'wrist': 30, 'gripper': 1},  .50),
+            # Sweep left
+            ({'waist':-50, 'shoulder':-25, 'elbow':-60, 'wrist':-30, 'gripper': 1},  .80),
+            # Forward reach — loosening up
+            ({'waist': 0,  'shoulder': 40, 'elbow':  0, 'wrist':-20, 'gripper':.8},  .50),
+            # Satisfied settle
+            ({'waist': 0,  'shoulder': 15, 'elbow':-20, 'wrist':  0, 'gripper':.5},  .40),
+            ({'waist': 0,  'shoulder':  0, 'elbow':  0, 'wrist':  0, 'gripper':.5},  .45),
+        ],
+    },
 }
+
+COMPOUND_ORDER = ['scan', 'nod', 'bow', 'search', 'stretch']
 
 
 # ═══════════════════════════════════════════════════════════
@@ -422,8 +540,12 @@ PRESETS = {
         'label': 'Reach Down', 'color': (170, 140, 180),
         'angles': {'waist': 0, 'shoulder': 90, 'elbow': 0, 'wrist': 0, 'gripper': 0.8},
     },
+    'sleep': {
+        'label': 'Sleep', 'color': (80, 80, 110),
+        'angles': {'waist': 0, 'shoulder': 75, 'elbow': -100, 'wrist': -90, 'gripper': 0.0},
+    },
 }
-PRESET_ORDER = ['vertical', 'forward', 'rest', 'reach']
+PRESET_ORDER = ['vertical', 'forward', 'rest', 'reach', 'sleep']
 
 
 class GesturePlayer:
