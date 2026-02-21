@@ -1,3 +1,69 @@
+# PX100 Robot Arm Controller
+
+Pygame-based 3D visualization and control app for the Interbotix PX100 robot arm.
+
+## Run
+
+```bash
+./run.sh            # or: .venv/bin/python main.py
+```
+
+## Architecture
+
+| File | Purpose |
+|------|---------|
+| `main.py` | App loop, UI panel, on-screen controls, keyboard/joystick input |
+| `robot.py` | `PX100Arm` FK model, `GesturePlayer`, `HardwareLink` (DYNAMIXEL), gesture keyframes, presets |
+| `mesh_render.py` | STL mesh loading + Phong shading with per-link colors |
+| `meshes/` | Interbotix PX100 STL files (8 links) |
+
+## Features
+
+- **9 emotion gestures**: happy, surprise, chirpy, funny, waving, bite, curious, sad, excited (keys 1-9)
+- **5 compound movements**: scan, nod, bow, search, stretch (panel buttons)
+- **6 presets**: vertical, forward, rest, reach down, sleep (panel buttons)
+- **3D rendering**: STL mesh model with Phong shading (diffuse + specular + rim lighting), per-link color differentiation; line-based fallback with depth shading and glow joints
+- **Controls**: on-screen joysticks, gripper slider, rotation knob, keyboard (WASD + arrows), physical gamepad
+- **Auto-rotate camera**: R key toggles turntable mode
+- **Collision safety**: floor detection reverts to last safe pose
+- **Hardware**: DYNAMIXEL XL430 via U2D2 (auto-detects, runs in simulation if absent)
+- **Save/load**: custom position snapshots persisted to `saved_positions.json`
+
+## Dependencies
+
+```
+pygame-ce>=2.5.0
+numpy>=1.24.0
+numpy-stl>=3.2.0
+dynamixel-sdk>=3.7.0
+```
+
+## Session Log
+
+### Feb 20, 2026
+- Added 5 compound multi-joint movements (scan, nod, bow, search, stretch)
+- Added sleep preset position (arm fully folded, powered-down pose)
+- Improved mesh renderer: Phong shading with specular + rim/fresnel lighting
+- Added per-link color differentiation (upper arm blue, forearm teal, servos gray)
+- Improved line-based fallback renderer: depth shading, highlight/shadow edges, glow joints
+- Added auto-rotate camera toggle (R key)
+- Refactored panel layout to dynamic Y positioning for extensibility
+- Commit: `98bca80`
+
+### Feb 15, 2026
+- Added 3D STL mesh rendering with flat shading and painter's algorithm
+- Added collision safety system (floor detection + auto-revert)
+- Added 3 new emotion gestures (curious, sad, excited) — now 9 total
+- Added bite gesture keyboard hotkey
+- Enhanced gesture animations with anticipation, follow-through, speed variation
+- DYNAMIXEL gripper operating mode configuration
+- Commit: `f523cf5`
+
+### Feb 14, 2026
+- Initial interactive PX100 controller with Pygame
+- 3D wireframe visualization, on-screen joysticks, gesture system
+- Commit: `53b3a37`
+
 <claude-mem-context>
 # Recent Activity
 
